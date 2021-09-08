@@ -121,7 +121,7 @@ def main(new_window):
     window = new_window
     window.clear()
 
-    print("w: {}, h: {}".format(str(get_width()), str(get_height())))
+    print("Window size is... w: {}, h: {}".format(str(get_width()), str(get_height())))
 
     curses.curs_set(0)
 
@@ -131,7 +131,11 @@ def main(new_window):
     refresh()
 
     blinking_state = False
+
+    # blinking right after user input
     SHORT_BLINKING = 300
+
+    # blinking during timeouts
     NORMAL_BLINKING = 500
 
     window.timeout(SHORT_BLINKING)
@@ -142,11 +146,12 @@ def main(new_window):
             refresh()
             blinking_state = False
             window.timeout(SHORT_BLINKING)
-        except Exception:
-            print("blink")
+        except curses.error: # TODO narrow it down so I only catch the timeout error
+            # timeout while waiting for user input
             window.chgat(cursor.y, cursor.x, 1, curses.A_NORMAL if not blinking_state else curses.A_BLINK)
             window.refresh()
             blinking_state = not blinking_state
             window.timeout(NORMAL_BLINKING)
 
-curses.wrapper(main)
+if __name__ == '__main__':
+    curses.wrapper(main)
