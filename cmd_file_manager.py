@@ -1,8 +1,13 @@
 import curses
 import curses.textpad
 import curses.ascii
+import os
+from pathlib import Path
+import threading
+import time
 
 lines: list[str] = []
+line_paths: list[Path] = []
 
 close_application = False
 
@@ -13,11 +18,21 @@ class Cursor():
         pass
 
     def ensure_in_bounds(self):
-        current_line = get_current_line()
+        assert len(lines) > 0, "Empty lines!"
+
+        if self.y >= len(lines):
+            self.y = len(lines) - 1
+        elif self.y < 0:
+            self.y = 0
+
+        current_line = lines[self.y]
+
         if self.x > len(current_line):
             self.x = len(current_line)
         elif self.x < 0:
             self.x = 0
+
+        global window
 
 cursor: Cursor = Cursor()
 
@@ -36,12 +51,10 @@ def refresh():
         window.addstr(y, 0, line)
         y += 1
 
-def get_current_line() -> str:
-    while not(0 <= cursor.y < len(lines)):
-        lines.append("")
-    return lines[cursor.y]
+    window.chgat(cursor.y, cursor.x, 1, curses.A_BLINK)
+    window.refresh()
 
-def process_input(input):
+def process_write_input(input):
     global close_application
 
     if isinstance(input, int):
@@ -53,8 +66,8 @@ def process_input(input):
             b'\t'
         ]
 
-        current_line = get_current_line()
         cursor.ensure_in_bounds()
+        current_line = lines[cursor.y]
 
         # pressed escape?
         if bytes(input, 'utf-8') == b'\x1b':
@@ -63,7 +76,6 @@ def process_input(input):
             return
         elif bytes(input, 'utf-8') == b'\n':
             cursor.y += 1
-            get_current_line()
             cursor.ensure_in_bounds()
             return
         elif bytes(input, 'utf-8') in do_nothing_byte_inputs:
@@ -84,6 +96,25 @@ def process_input(input):
         lines[cursor.y] = "".join(current_line_list)
         cursor.x += 1
 
+def read_folder(path: str):
+    global lines
+    global lines_paths
+
+    assert not os.path.isfile(path)
+
+    lines = []
+    line_paths = []
+    for file in os.listdir(path):
+        if not os.path.isfile(file):
+            lines.append("./" + file)
+            line_paths.append(os.path.join(path, file))
+
+    for file in os.listdir(path):
+        if os.path.isfile(file):
+            lines.append(file)
+            line_paths.append(os.path.join(path, file))
+
+    assert len(lines) > 0
 
 def main(new_window):
     global window
@@ -92,10 +123,30 @@ def main(new_window):
 
     print("w: {}, h: {}".format(str(get_width()), str(get_height())))
 
+    curses.curs_set(0)
+
+    read_folder(os.getcwd())
+
+    cursor.ensure_in_bounds()
+    refresh()
+
+    blinking_state = False
+    SHORT_BLINKING = 300
+    NORMAL_BLINKING = 500
+
+    window.timeout(SHORT_BLINKING)
     while not close_application:
-        char = window.get_wch()
-        process_input(char)
-        window.move(cursor.y, cursor.x)
-        refresh()
+        try:
+            char = window.get_wch()
+            process_write_input(char)
+            refresh()
+            blinking_state = False
+            window.timeout(SHORT_BLINKING)
+        except Exception:
+            print("blink")
+            window.chgat(cursor.y, cursor.x, 1, curses.A_NORMAL if not blinking_state else curses.A_BLINK)
+            window.refresh()
+            blinking_state = not blinking_state
+            window.timeout(NORMAL_BLINKING)
 
 curses.wrapper(main)
