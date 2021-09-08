@@ -32,8 +32,6 @@ class Cursor():
         elif self.x < 0:
             self.x = 0
 
-        global window
-
 cursor: Cursor = Cursor()
 
 window: curses.window = None
@@ -51,14 +49,33 @@ def refresh():
         window.addstr(y, 0, line)
         y += 1
 
+    cursor.ensure_in_bounds()
     window.chgat(cursor.y, cursor.x, 1, curses.A_BLINK)
     window.refresh()
 
 def process_write_input(input):
     global close_application
 
+    cursor.ensure_in_bounds()
+    current_line = lines[cursor.y]
+
     if isinstance(input, int):
-        pass
+        # arrow keys
+        if input == 258:
+            cursor.y += 1
+        elif input == 259:
+            cursor.y -= 1
+        elif input == 260:
+            cursor.x -= 1
+        elif input == 261:
+            cursor.x += 1
+        # delete
+        elif input == 330:
+            if len(current_line) > cursor.x:
+                current_line_list = list(current_line)
+                del current_line_list[cursor.x]
+                lines[cursor.y] = "".join(current_line_list)
+
     else:
         print("input info:\nstring ->{}<-\nbytes ->{}<-".format(str(input), str(bytes(input, 'utf-8'))))
 
@@ -66,17 +83,17 @@ def process_write_input(input):
             b'\t'
         ]
 
-        cursor.ensure_in_bounds()
-        current_line = lines[cursor.y]
+        exit_byte_inputs = [
+            b'\x03', b'\x1b'
+        ]
 
         # pressed escape?
-        if bytes(input, 'utf-8') == b'\x1b':
+        if bytes(input, 'utf-8') in exit_byte_inputs:
             print("closed")
             close_application = True
             return
         elif bytes(input, 'utf-8') == b'\n':
             cursor.y += 1
-            cursor.ensure_in_bounds()
             return
         elif bytes(input, 'utf-8') in do_nothing_byte_inputs:
             print("do nothing")
@@ -124,6 +141,7 @@ def main(new_window):
     print("Window size is... w: {}, h: {}".format(str(get_width()), str(get_height())))
 
     curses.curs_set(0)
+    window.nodelay(1)
 
     read_folder(os.getcwd())
 
@@ -148,6 +166,7 @@ def main(new_window):
             window.timeout(SHORT_BLINKING)
         except curses.error: # TODO narrow it down so I only catch the timeout error
             # timeout while waiting for user input
+            cursor.ensure_in_bounds()
             window.chgat(cursor.y, cursor.x, 1, curses.A_NORMAL if not blinking_state else curses.A_BLINK)
             window.refresh()
             blinking_state = not blinking_state
