@@ -16,8 +16,6 @@ def get_height():
 def main(main_window):
     close_application = False
 
-    cursor: Cursor = Cursor()
-
     curses.curs_set(0)
     main_window.nodelay(1)
 
@@ -40,15 +38,11 @@ def main(main_window):
     main_window.timeout(SHORT_BLINKING)
 
     def update():
-        cursor.ensure_in_bounds(active_area)
         filenames_area.update_contents()
 
     def draw():
-        if len(active_area.lines) > 0:
-            active_area.pad.chgat(cursor.y, cursor.x, 1, curses.A_NORMAL if not blinking_state else curses.A_BLINK)
-
         main_window.refresh()
-        filenames_area.draw()
+        filenames_area.draw(blinking_state)
 
     def is_close_input(input):
         if isinstance(input, int):
@@ -79,7 +73,7 @@ def main(main_window):
                 close_application = True
                 break
 
-            active_area.process_write_input(cursor, input)
+            active_area.process_input(input)
 
             blinking_state = True
             update()

@@ -2,6 +2,7 @@ import curses
 import curses.textpad
 import curses.ascii
 import os
+from typing import Optional
 
 class WindowArea():
     def __init__(self):
@@ -14,8 +15,7 @@ class WindowArea():
         self.display_height = 0
         self.display_x = 0
         self.display_y = 0
-
-        self.allow_edition = False
+        self.cursor: Optional[Cursor] = None
 
     def get_width(self):
         longest_line = max([len(line) for line in self.lines])
@@ -24,12 +24,17 @@ class WindowArea():
     def get_height(self):
         return len(self.lines)
 
-    def draw(self):
+    def draw(self, blinking_state: bool):
+        if self.cursor is not None:
+            self.cursor.draw_blinking(self, blinking_state)
         self.pad.refresh(self.scroll_y, self.scroll_x, self.display_y, self.display_x,
                 self.display_y + min(self.display_height, self.get_height()),
                 self.display_x + min(self.display_width, self.get_width()))
 
     def update_contents(self):
+        if self.cursor is not None:
+            self.cursor.ensure_in_bounds(self)
+
         self.pad.clear()
         if len(self.lines) == 0:
             return
@@ -41,7 +46,7 @@ class WindowArea():
             self.pad.addstr(y, 0, line)
             y += 1
 
-    def process_write_input(self, cursor, input) -> bool:
+    def process_input(self, input) -> bool:
         pass
 
 class FilenamesPrefixArea(WindowArea):
@@ -49,27 +54,27 @@ class FilenamesPrefixArea(WindowArea):
         super().__init__()
 
 
-
 class FilenamesArea(WindowArea):
     def __init__(self):
         super().__init__()
 
         self.line_paths: list[str] = []
-        self.allow_edition = True
 
         self.prefix_area = FilenamesPrefixArea()
 
-    def draw(self):
+        self.cursor = Cursor()
+
+    def draw(self, blinking_state):
         self.prefix_area.display_x = self.display_x
         self.prefix_area.display_y = self.display_y
         self.prefix_area.display_width = self.display_width
         self.prefix_area.display_height = self.display_height
 
-        self.prefix_area.draw()
+        self.prefix_area.draw(blinking_state)
 
         # offset
         self.display_x += 4
-        super().draw()
+        super().draw(blinking_state)
         self.display_x -= 4
 
     def update_contents(self):
@@ -97,28 +102,28 @@ class FilenamesArea(WindowArea):
 
         assert len(self.lines) > 0
 
-    def process_write_input(self, cursor, input) -> bool:
+    def process_input(self, input) -> bool:
         if len(self.lines) == 0:
             return
 
-        current_line = self.lines[cursor.y]
+        current_line = self.lines[self.cursor.y]
 
         if isinstance(input, int):
             # arrow keys
             if input == 258:
-                cursor.y += 1
+                self.cursor.y += 1
             elif input == 259:
-                cursor.y -= 1
+                self.cursor.y -= 1
             elif input == 260:
-                cursor.x -= 1
+                self.cursor.x -= 1
             elif input == 261:
-                cursor.x += 1
+                self.cursor.x += 1
             # delete
             elif input == 330:
-                if len(current_line) > cursor.x:
+                if len(current_line) > self.cursor.x:
                     current_line_list = list(current_line)
-                    del current_line_list[cursor.x]
-                    self.lines[cursor.y] = "".join(current_line_list)
+                    del current_line_list[self.cursor.x]
+                    self.lines[self.cursor.y] = "".join(current_line_list)
         else:
             print("input info:\nstring ->{}<-\nbytes ->{}<-".format(str(input), str(bytes(input, 'utf-8'))))
 
@@ -127,22 +132,22 @@ class FilenamesArea(WindowArea):
             ]
 
             if bytes(input, 'utf-8') == b'\n':
-                cursor.y += 1
+                self.cursor.y += 1
                 return False
             elif bytes(input, 'utf-8') in do_nothing_byte_inputs:
                 print("do nothing")
                 return False
             elif bytes(input, 'utf-8') == b'\x08': # backspace
-                if cursor.x == 0:
+                if self.cursor.x == 0:
                     return False
                 current_line_list = list(current_line)
-                del current_line_list[cursor.x - 1]
-                self.lines[cursor.y] = "".join(current_line_list)
-                cursor.x -= 1
+                del current_line_list[self.cursor.x - 1]
+                self.lines[self.cursor.y] = "".join(current_line_list)
+                self.cursor.x -= 1
                 return False
 
             current_line_list = list(current_line)
-            current_line_list.insert(cursor.x, input)
+            current_line_list.insert(self.cursor.x, input)
 
             self.lines[cursor.y] = "".join(current_line_list)
             cursor.x += 1
@@ -156,11 +161,7 @@ class Cursor():
         pass
 
     def ensure_in_bounds(self, window: WindowArea):
-        # assert len(window.lines) > 0, "Empty lines!"
-        if not window.allow_edition or len(window.lines) == 0:
-            self.x = 0
-            self.y = 0
-            return
+        assert len(window.lines) > 0, "Empty lines!"
 
         if self.y >= len(window.lines):
             self.y = len(window.lines) - 1
@@ -173,3 +174,6 @@ class Cursor():
             self.x = len(current_line)
         elif self.x < 0:
             self.x = 0
+
+    def draw_blinking(self, window: WindowArea, blinking_state: bool):
+        window.pad.chgat(self.y, self.x, 1, curses.A_NORMAL if not blinking_state else curses.A_BLINK)
