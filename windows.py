@@ -15,10 +15,7 @@ class WindowArea():
         self.display_x = 0
         self.display_y = 0
 
-    def draw(self):
-        self.pad.refresh(self.scroll_y, self.scroll_x, self.display_y, self.display_x,
-                min(self.display_height, self.get_height()),
-                min(self.display_width, self.get_width()))
+        self.allow_edition = False
 
     def get_width(self):
         longest_line = max([len(line) for line in self.lines])
@@ -27,12 +24,10 @@ class WindowArea():
     def get_height(self):
         return len(self.lines)
 
-
-class FilenamesArea(WindowArea):
-    def __init__(self):
-        super().__init__()
-
-        self.line_paths: list[str] = []
+    def draw(self):
+        self.pad.refresh(self.scroll_y, self.scroll_x, self.display_y, self.display_x,
+                self.display_y + min(self.display_height, self.get_height()),
+                self.display_x + min(self.display_width, self.get_width()))
 
     def update_contents(self):
         self.pad.clear()
@@ -46,6 +41,41 @@ class FilenamesArea(WindowArea):
             self.pad.addstr(y, 0, line)
             y += 1
 
+    def process_write_input(self, cursor, input) -> bool:
+        pass
+
+class FilenamesPrefixArea(WindowArea):
+    def __init__(self):
+        super().__init__()
+
+
+
+class FilenamesArea(WindowArea):
+    def __init__(self):
+        super().__init__()
+
+        self.line_paths: list[str] = []
+        self.allow_edition = True
+
+        self.prefix_area = FilenamesPrefixArea()
+
+    def draw(self):
+        self.prefix_area.display_x = self.display_x
+        self.prefix_area.display_y = self.display_y
+        self.prefix_area.display_width = self.display_width
+        self.prefix_area.display_height = self.display_height
+
+        self.prefix_area.draw()
+
+        # offset
+        self.display_x += 4
+        super().draw()
+        self.display_x -= 4
+
+    def update_contents(self):
+        self.prefix_area.update_contents()
+        return super().update_contents()
+
     def read_folder(self, path: str):
         assert not os.path.isfile(path)
 
@@ -55,11 +85,15 @@ class FilenamesArea(WindowArea):
             if not os.path.isfile(file):
                 self.lines.append("./" + file)
                 self.line_paths.append(os.path.join(path, file))
+                self.prefix_area.lines.append("📁")
 
+        file_number = 1
         for file in os.listdir(path):
             if os.path.isfile(file):
                 self.lines.append(file)
                 self.line_paths.append(os.path.join(path, file))
+                self.prefix_area.lines.append(str(file_number))
+                file_number += 1
 
         assert len(self.lines) > 0
 
@@ -123,7 +157,9 @@ class Cursor():
 
     def ensure_in_bounds(self, window: WindowArea):
         # assert len(window.lines) > 0, "Empty lines!"
-        if len(window.lines) == 0:
+        if not window.allow_edition or len(window.lines) == 0:
+            self.x = 0
+            self.y = 0
             return
 
         if self.y >= len(window.lines):
