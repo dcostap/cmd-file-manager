@@ -18,7 +18,6 @@ def main(main_window):
 
     cursor: Cursor = Cursor()
 
-    main_window.clear()
     curses.curs_set(0)
     main_window.nodelay(1)
 
@@ -30,7 +29,7 @@ def main(main_window):
 
     print("Window size is... w: {}, h: {}".format(str(get_width()), str(get_height())))
 
-    blinking_state = False
+    blinking_state = True
 
     # blinking right after user input
     SHORT_BLINKING = 300
@@ -40,9 +39,16 @@ def main(main_window):
 
     main_window.timeout(SHORT_BLINKING)
 
-    def refresh_windows():
+    def update():
+        cursor.ensure_in_bounds(active_area)
+        filenames_area.update_contents()
+
+    def draw():
+        if len(active_area.lines) > 0:
+            active_area.pad.chgat(cursor.y, cursor.x, 1, curses.A_NORMAL if not blinking_state else curses.A_BLINK)
+
         main_window.refresh()
-        filenames_area.refresh(cursor)
+        filenames_area.draw()
 
     def is_close_input(input):
         if isinstance(input, int):
@@ -61,6 +67,9 @@ def main(main_window):
 
     resize_windows()
 
+    update()
+    draw()
+
     while not close_application:
         try:
             input = main_window.get_wch()
@@ -70,19 +79,17 @@ def main(main_window):
                 close_application = True
                 break
 
-            cursor.ensure_in_bounds(active_area)
             active_area.process_write_input(cursor, input)
-            cursor.ensure_in_bounds(active_area)
-            refresh_windows()
-            blinking_state = False
+
+            blinking_state = True
+            update()
+            draw()
             main_window.timeout(SHORT_BLINKING)
-        except curses.error: # TODO narrow it down so I only catch the timeout error
-            # timeout while waiting for user input
-            refresh_windows()
-            cursor.ensure_in_bounds(active_area)
-            if len(active_area.lines) > 0:
-                active_area.pad.chgat(cursor.y, cursor.x, 1, curses.A_NORMAL if not blinking_state else curses.A_BLINK)
+        except curses.error: # timeout while waiting for user input
+            # TODO narrow 'except' down so I only catch the timeout error
             blinking_state = not blinking_state
+            update()
+            draw()
             main_window.timeout(NORMAL_BLINKING)
 
 if __name__ == '__main__':

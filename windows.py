@@ -15,6 +15,11 @@ class WindowArea():
         self.display_x = 0
         self.display_y = 0
 
+    def draw(self):
+        self.pad.refresh(self.scroll_y, self.scroll_x, self.display_y, self.display_x,
+                min(self.display_height, self.get_height()),
+                min(self.display_width, self.get_width()))
+
     def get_width(self):
         longest_line = max([len(line) for line in self.lines])
         return longest_line + 1 # buffer of 1 character in the right so cursor can be positioned there
@@ -29,11 +34,10 @@ class FilenamesArea(WindowArea):
 
         self.line_paths: list[str] = []
 
-    def refresh(self, cursor):
+    def update_contents(self):
         self.pad.clear()
         if len(self.lines) == 0:
             return
-
 
         self.pad.resize(self.get_height(), self.get_width())
 
@@ -41,11 +45,6 @@ class FilenamesArea(WindowArea):
         for line in self.lines:
             self.pad.addstr(y, 0, line)
             y += 1
-
-        self.pad.chgat(cursor.y, cursor.x, 1, curses.A_BLINK)
-        self.pad.refresh(self.scroll_y, self.scroll_x, self.display_y, self.display_x,
-                min(self.display_height, self.get_height()),
-                min(self.display_width, self.get_width()))
 
     def read_folder(self, path: str):
         assert not os.path.isfile(path)
