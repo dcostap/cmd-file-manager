@@ -13,78 +13,95 @@ def get_width():
 def get_height():
     return curses.LINES
 
-def main(main_window):
-    close_application = False
+# blinking right after user input
+SHORT_BLINKING = 300
 
-    curses.curs_set(0)
-    main_window.nodelay(1)
+# blinking during timeouts
+NORMAL_BLINKING = 500
 
-    filenames_area: FilenamesArea = None
-    filenames_area = FilenamesArea()
-    filenames_area.read_folder(os.getcwd())
+def is_close_input(input):
+    if isinstance(input, int):
+        return False
 
-    active_area: WindowArea = filenames_area
+    exit_byte_inputs = [
+        b'\x03', b'\x1b'
+    ]
+    return bytes(input, 'utf-8') in exit_byte_inputs
 
-    print("Window size is... w: {}, h: {}".format(str(get_width()), str(get_height())))
+class WindowManager():
+    def start(self, main_window):
+        self.main_window = main_window
 
-    blinking_state = True
+        self.filenames_area = FilenamesArea(self)
+        self.status_area = WindowArea(self)
 
-    # blinking right after user input
-    SHORT_BLINKING = 300
+        self.input_focus_area: WindowArea = self.filenames_area
+        self.all_windows = [self.status_area, self.filenames_area]
 
-    # blinking during timeouts
-    NORMAL_BLINKING = 500
+        self.close_application = False
+        self.blinking_state: bool = True
 
-    main_window.timeout(SHORT_BLINKING)
+        curses.curs_set(0)
+        main_window.nodelay(1)
 
-    def update():
-        filenames_area.update_contents()
+        print("Window size is... w: {}, h: {}".format(str(get_width()), str(get_height())))
 
-    def draw():
-        main_window.refresh()
-        filenames_area.draw(blinking_state)
+        main_window.timeout(SHORT_BLINKING)
 
-    def is_close_input(input):
-        if isinstance(input, int):
-            return False
 
-        exit_byte_inputs = [
-            b'\x03', b'\x1b'
-        ]
-        return bytes(input, 'utf-8') in exit_byte_inputs
+        self.filenames_area.read_folder(os.getcwd())
 
-    def resize_windows():
-        filenames_area.display_x = 0
-        filenames_area.display_y = 0
-        filenames_area.display_width = int(get_width() / 2)
-        filenames_area.display_height = get_height()
+        self.resize_windows()
+        self.update()
+        self.draw()
 
-    resize_windows()
+        while not self.close_application:
+            try:
+                input = main_window.get_wch()
 
-    update()
-    draw()
+                if is_close_input(input):
+                    print("closed")
+                    self.close_application = True
+                    continue
+                elif input == 546:
+                    self.resize_windows()
+                    self.draw()
+                    continue
 
-    while not close_application:
-        try:
-            input = main_window.get_wch()
+                self.input_focus_area.process_input(input)
 
-            if is_close_input(input):
-                print("closed")
-                close_application = True
-                break
+                self.blinking_state = True
+                self.update()
+                self.draw()
+                main_window.timeout(SHORT_BLINKING)
+            except curses.error: # timeout while waiting for user input
+                # TODO narrow 'except' down so I only catch the timeout error
+                self.blinking_state = not self.blinking_state
+                self.update()
+                self.draw()
+                main_window.timeout(NORMAL_BLINKING)
 
-            active_area.process_input(input)
+    def update(self):
+        for win in self.all_windows:
+            win.update_contents()
 
-            blinking_state = True
-            update()
-            draw()
-            main_window.timeout(SHORT_BLINKING)
-        except curses.error: # timeout while waiting for user input
-            # TODO narrow 'except' down so I only catch the timeout error
-            blinking_state = not blinking_state
-            update()
-            draw()
-            main_window.timeout(NORMAL_BLINKING)
+    def draw(self):
+        self.main_window.refresh()
+        for win in self.all_windows:
+            win.draw(self.blinking_state)
+
+    def resize_windows(self):
+        self.status_area.display_x = 0
+        self.status_area.display_y = 0
+        self.status_area.display_width = get_width()
+        self.status_area.display_height = 1
+
+        self.filenames_area.display_x = 0
+        self.filenames_area.display_y = 1
+        self.filenames_area.display_width = int(get_width() / 2)
+        self.filenames_area.display_height = get_height()
+
+        print("width: {}".format(str(self.filenames_area.display_width)))
 
 if __name__ == '__main__':
-    curses.wrapper(main)
+    curses.wrapper(WindowManager().start)

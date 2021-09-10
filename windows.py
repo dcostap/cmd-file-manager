@@ -5,7 +5,7 @@ import os
 from typing import Optional
 
 class WindowArea():
-    def __init__(self):
+    def __init__(self, window_manager):
         self.pad = curses.newpad(0, 0)
         self.scroll_x = 0
         self.scroll_y = 0
@@ -17,7 +17,11 @@ class WindowArea():
         self.display_y = 0
         self.cursor: Optional[Cursor] = None
 
+        self.windows_manager = window_manager
+
     def get_width(self):
+        # if len(self.lines) == 0:
+        #     return 0
         longest_line = max([len(line) for line in self.lines])
         return longest_line + 1 # buffer of 1 character in the right so cursor can be positioned there
 
@@ -35,11 +39,14 @@ class WindowArea():
         if self.cursor is not None:
             self.cursor.ensure_in_bounds(self)
 
+            self.scroll_x = max(self.cursor.x + 5 - self.display_width, 0)
+            self.scroll_y = max(self.cursor.y + 5 - self.display_height, 0)
+
         self.pad.clear()
+        self.pad.resize(self.get_height(), self.get_width())
+
         if len(self.lines) == 0:
             return
-
-        self.pad.resize(self.get_height(), self.get_width())
 
         y = 0
         for line in self.lines:
@@ -50,17 +57,17 @@ class WindowArea():
         pass
 
 class FilenamesPrefixArea(WindowArea):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, window_manager):
+        super().__init__(window_manager)
 
 
 class FilenamesArea(WindowArea):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, window_manager):
+        super().__init__(window_manager)
 
         self.line_paths: list[str] = []
 
-        self.prefix_area = FilenamesPrefixArea()
+        self.prefix_area = FilenamesPrefixArea(window_manager)
 
         self.cursor = Cursor()
 
@@ -101,6 +108,12 @@ class FilenamesArea(WindowArea):
                 file_number += 1
 
         assert len(self.lines) > 0
+
+        status_area = self.windows_manager.status_area
+
+        if len(status_area.lines) == 0:
+            status_area.lines.append("")
+        status_area.lines[0] = path + " [{} {} found]".format(str(file_number), "files" if file_number > 0 else "file")
 
     def process_input(self, input) -> bool:
         if len(self.lines) == 0:
@@ -149,8 +162,8 @@ class FilenamesArea(WindowArea):
             current_line_list = list(current_line)
             current_line_list.insert(self.cursor.x, input)
 
-            self.lines[cursor.y] = "".join(current_line_list)
-            cursor.x += 1
+            self.lines[self.cursor.y] = "".join(current_line_list)
+            self.cursor.x += 1
 
         return False
 
