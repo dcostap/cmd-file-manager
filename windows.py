@@ -23,7 +23,7 @@ class WindowArea():
         # if len(self.lines) == 0:
         #     return 0
         longest_line = max([len(line) for line in self.lines])
-        return longest_line + 1 # buffer of 1 character in the right so cursor can be positioned there
+        return longest_line + 1 # buffer of 1 character to the right so cursor can be positioned there
 
     def get_height(self):
         return len(self.lines)
@@ -69,7 +69,30 @@ class FilenamesArea(WindowArea):
 
         self.prefix_area = FilenamesPrefixArea(window_manager)
 
-        self.cursor = Cursor()
+
+        self.state: int = 0
+
+        self.state0_cursor: Cursor = None
+        self.cursor: Cursor = None
+        self.transition_to_state(0)
+
+    def get_current_cursor(self):
+        return self.cursor if self.state == 1 else self.state0_cursor
+
+    def transition_to_state(self, new_state: int):
+        self.state = new_state
+        if new_state == 0:
+            self.state0_cursor = self.cursor
+
+            if self.state0_cursor is None:
+                self.state0_cursor = Cursor()
+            self.cursor = None
+        elif new_state == 1:
+            self.cursor = self.state0_cursor
+
+            if self.cursor is None:
+                self.cursor = Cursor()
+            self.state0_cursor = None
 
     def draw(self, blinking_state):
         self.prefix_area.display_x = self.display_x
@@ -81,11 +104,17 @@ class FilenamesArea(WindowArea):
 
         # offset
         self.display_x += 4
+
+        if self.state == 0:
+            for x in range(0, self.get_width()):
+                self.pad.chgat(self.state0_cursor.y, x, 1, curses.A_STANDOUT)
+
         super().draw(blinking_state)
         self.display_x -= 4
 
     def update_contents(self):
         self.prefix_area.update_contents()
+        self.get_current_cursor().ensure_in_bounds(self)
         return super().update_contents()
 
     def read_folder(self, path: str):
@@ -93,6 +122,7 @@ class FilenamesArea(WindowArea):
 
         self.lines = []
         self.line_paths = []
+        self.prefix_area.lines = []
         for file in os.listdir(path):
             if not os.path.isfile(file):
                 self.lines.append("./" + file)
@@ -119,24 +149,28 @@ class FilenamesArea(WindowArea):
         if len(self.lines) == 0:
             return
 
-        current_line = self.lines[self.cursor.y]
+        current_line = self.lines[self.get_current_cursor().y]
 
         if isinstance(input, int):
             # arrow keys
             if input == 258:
-                self.cursor.y += 1
+                self.get_current_cursor().y += 1
             elif input == 259:
-                self.cursor.y -= 1
+                self.get_current_cursor().y -= 1
             elif input == 260:
-                self.cursor.x -= 1
+                self.get_current_cursor().x -= 1
             elif input == 261:
-                self.cursor.x += 1
+                self.get_current_cursor().x += 1
             # delete
             elif input == 330:
-                if len(current_line) > self.cursor.x:
+                if len(current_line) > self.get_current_cursor().x:
                     current_line_list = list(current_line)
-                    del current_line_list[self.cursor.x]
-                    self.lines[self.cursor.y] = "".join(current_line_list)
+                    del current_line_list[self.get_current_cursor().x]
+                    self.lines[self.get_current_cursor().y] = "".join(current_line_list)
+            # f2
+            elif input == 266:
+                if self.state == 0:
+                    self.transition_to_state(1)
         else:
             print("input info:\nstring ->{}<-\nbytes ->{}<-".format(str(input), str(bytes(input, 'utf-8'))))
 
@@ -145,25 +179,25 @@ class FilenamesArea(WindowArea):
             ]
 
             if bytes(input, 'utf-8') == b'\n':
-                self.cursor.y += 1
+                self.read_folder(self.line_paths[self.get_current_cursor().y])
                 return False
             elif bytes(input, 'utf-8') in do_nothing_byte_inputs:
                 print("do nothing")
                 return False
             elif bytes(input, 'utf-8') == b'\x08': # backspace
-                if self.cursor.x == 0:
+                if self.get_current_cursor().x == 0:
                     return False
                 current_line_list = list(current_line)
-                del current_line_list[self.cursor.x - 1]
-                self.lines[self.cursor.y] = "".join(current_line_list)
-                self.cursor.x -= 1
+                del current_line_list[self.get_current_cursor().x - 1]
+                self.lines[self.get_current_cursor().y] = "".join(current_line_list)
+                self.get_current_cursor().x -= 1
                 return False
 
             current_line_list = list(current_line)
-            current_line_list.insert(self.cursor.x, input)
+            current_line_list.insert(self.get_current_cursor().x, input)
 
-            self.lines[self.cursor.y] = "".join(current_line_list)
-            self.cursor.x += 1
+            self.lines[self.get_current_cursor().y] = "".join(current_line_list)
+            self.get_current_cursor().x += 1
 
         return False
 
